@@ -218,6 +218,9 @@ public class FaceActivity extends AppCompatActivity {
                                 new OnSuccessListener<List<Face>>() {
                                     @Override
                                     public void onSuccess(List<Face> faces) {
+                                        if (faces.isEmpty()) {
+                                            binding.output.setText("Aucun visage détecté.");
+                                        }
                                         for (Face face : faces) {
                                             Rect bounds = face.getBoundingBox();
                                             embeddingNew = performFaceRecognition(bounds, input);
@@ -244,6 +247,9 @@ public class FaceActivity extends AppCompatActivity {
                                 new OnSuccessListener<List<Face>>() {
                                     @Override
                                     public void onSuccess(List<Face> faces) {
+                                        if (faces.isEmpty()) {
+                                            binding.output.setText("Aucun visage détecté.");
+                                        }
                                         for (Face face : faces) {
                                             Rect bounds = face.getBoundingBox();
                                             performFaceRecognitionFromVideo(bounds, input);
@@ -489,7 +495,7 @@ public class FaceActivity extends AppCompatActivity {
                 .prepareRecording(this, outputOptions)
                 .start(ContextCompat.getMainExecutor(this), event -> {
                         if (event instanceof VideoRecordEvent.Start) {
-                            Log.i("Video", "Recording started");
+                            Log.i("Video", "Enregistrement commencé");
                         } else if (event instanceof VideoRecordEvent.Finalize) {
                             VideoRecordEvent.Finalize finalizeEvent = (VideoRecordEvent.Finalize) event;
                             videoUri = finalizeEvent.getOutputResults().getOutputUri();
