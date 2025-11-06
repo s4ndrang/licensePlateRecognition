@@ -20,8 +20,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.View;
-import android.view.animation.AlphaAnimation;
-import android.view.animation.Animation;
 import android.widget.ImageView;
 import android.widget.Toast;
 
@@ -66,7 +64,6 @@ import java.io.IOException;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
@@ -150,17 +147,7 @@ public class FaceActivity extends AppCompatActivity {
         tflite.run(input, output);  // THIS IS THE KEY STEP
 
         float[] embedding = output[0];
-
-        //normalize embedding vector
-        float sum = 0f;
-        for (float v : embedding) {
-            sum += v * v;
-        }
-        float norm = (float) Math.sqrt(sum);
-        for (int i = 0; i < embedding.length; i++) {
-            embedding[i] /= norm;
-        }
-        return embedding;
+        return l2Normalize(embedding);
     }
 
     private boolean compareFaces(float[] embeddingNew) {
@@ -204,42 +191,7 @@ public class FaceActivity extends AppCompatActivity {
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength);
     }
 
-    public void performFaceDetection(Bitmap input) {
-        InputImage image = null;
-        try {
-            image = InputImage.fromFilePath(this, destUri);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        if (image == null) return;
-        Task<List<Face>> result =
-                detector.process(image)
-                        .addOnSuccessListener(
-                                new OnSuccessListener<List<Face>>() {
-                                    @Override
-                                    public void onSuccess(List<Face> faces) {
-                                        if (faces.isEmpty()) {
-                                            binding.output.setText("Aucun visage détecté.");
-                                        }
-                                        for (Face face : faces) {
-                                            Rect bounds = face.getBoundingBox();
-                                            embeddingNew = performFaceRecognition(bounds, input);
-//                                            Log.i("TFLiteDebug", "EmbeddingNew: " + Arrays.toString(embeddingNew));
-                                            boolean isPatient = compareFaces(embeddingNew);
-                                            binding.output.setText(isPatient ? name : "NOT " + name);
-                                        }
-                                    }
-                                })
-                        .addOnFailureListener(
-                                new OnFailureListener() {
-                                    @Override
-                                    public void onFailure(@NonNull Exception e) {
-                                        Log.i("TFLiteDebug", "Visage non-détecté");
-                                    }
-                                });
-    }
-
-    public void performFaceDetectionFromVideo(Bitmap input) {
+    public void performFaceDetection(Bitmap input, boolean fromVideo) {
         InputImage image = InputImage.fromBitmap(input, 0);
         Task<List<Face>> result =
                 detector.process(image)
@@ -252,7 +204,14 @@ public class FaceActivity extends AppCompatActivity {
                                         }
                                         for (Face face : faces) {
                                             Rect bounds = face.getBoundingBox();
-                                            performFaceRecognitionFromVideo(bounds, input);
+                                            if (fromVideo) {
+                                                float[] embedding = performFaceRecognition(bounds, input, true);
+                                                patientEmbeddings.add(embedding);
+                                            } else {
+                                                float[] embeddingNew = performFaceRecognition(bounds, input, false);
+                                                boolean isPatient = compareFaces(embeddingNew);
+                                                binding.output.setText(isPatient ? name : "NOT " + name);
+                                            }
                                         }
                                     }
                                 })
@@ -264,7 +223,8 @@ public class FaceActivity extends AppCompatActivity {
                                     }
                                 });
     }
-    public float[] performFaceRecognition(Rect bound, Bitmap input) {
+
+    public float[] performFaceRecognition(Rect bound, Bitmap input, boolean fromVideo) {
         if (bound.top < 0) {
             bound.top = 0;
         }
@@ -278,29 +238,12 @@ public class FaceActivity extends AppCompatActivity {
             bound.bottom = input.getHeight() - 1;
         }
         Bitmap croppedFace = Bitmap.createBitmap(input, bound.left, bound.top, bound.width(), bound.height());
-        binding.currentPhoto.setImageBitmap(croppedFace);
-        binding.executePendingBindings();
-        float[] embeddingsNew = doInference(croppedFace);
+        if (!fromVideo) {
+            binding.currentPhoto.setImageBitmap(croppedFace);
+            binding.executePendingBindings();
+        }
 //        Log.i("TFLiteDebug", "patientEmbeddings : " + Arrays.toString(embeddingsNew));
-        return embeddingsNew;
-    }
-    public void performFaceRecognitionFromVideo(Rect bound, Bitmap input) {
-        if (bound.top < 0) {
-            bound.top = 0;
-        }
-        if (bound.left < 0) {
-            bound.left = 0;
-        }
-        if (bound.right > input.getWidth()) {
-            bound.right = input.getWidth() - 1;
-        }
-        if (bound.bottom > input.getHeight()) {
-            bound.bottom = input.getHeight() - 1;
-        }
-        Bitmap croppedFace = Bitmap.createBitmap(input, bound.left, bound.top, bound.width(), bound.height());
-        float[] embedding = doInference(croppedFace);
-//        Log.i("TFLiteDebug", "patientEmbeddings : " + Arrays.toString(embedding));
-        patientEmbeddings.add(embedding);
+        return doInference(croppedFace);
     }
 
 
@@ -314,14 +257,14 @@ public class FaceActivity extends AppCompatActivity {
 
     private final ActivityResultLauncher<String[]> videoRequestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestMultiplePermissions(),
-                            result -> {
-                boolean cameraGranted = result.getOrDefault(Manifest.permission.CAMERA, false);
-                boolean audioGranted = result.getOrDefault(Manifest.permission.RECORD_AUDIO, false);
-                if (cameraGranted && audioGranted) {
-                } else {
-                    Toast.makeText(this, "Camera and audio permissions are required", Toast.LENGTH_SHORT).show();
-                }
-            });
+                    result -> {
+                        boolean cameraGranted = result.getOrDefault(Manifest.permission.CAMERA, false);
+                        boolean audioGranted = result.getOrDefault(Manifest.permission.RECORD_AUDIO, false);
+                        if (cameraGranted && audioGranted) {
+                        } else {
+                            Toast.makeText(this, "Camera and audio permissions are required", Toast.LENGTH_SHORT).show();
+                        }
+                    });
 
     private final ActivityResultLauncher<Intent> cameraActivityResultLauncher =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(),
@@ -334,7 +277,7 @@ public class FaceActivity extends AppCompatActivity {
                                 e.printStackTrace();
                             }
                             if (bitmap != null) {
-                                performFaceDetection(bitmap);
+                                performFaceDetection(bitmap, false);
                             }
                         }
                     });
@@ -415,8 +358,7 @@ public class FaceActivity extends AppCompatActivity {
         for (int i = 0; i < durationMs; i += 250) {
             Bitmap frame = retriever.getFrameAtTime(i * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC); //microseconds
             if (frame != null) {
-                Log.i("TFLiteDebug", "performFaceDetectionFromVideo " + i);
-                performFaceDetectionFromVideo(frame);
+                performFaceDetection(frame, true);
             }
         }
         retriever.release();
@@ -486,7 +428,7 @@ public class FaceActivity extends AppCompatActivity {
         createVideoFile(); // create file to save video
         FileOutputOptions outputOptions = new FileOutputOptions.Builder(videoFile).build();
 
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { //if user did not select Allow Camera for always;
                 videoRequestPermissionLauncher.launch(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO});
             }
@@ -494,25 +436,25 @@ public class FaceActivity extends AppCompatActivity {
         Recording currentRecording = videoCapture.getOutput()
                 .prepareRecording(this, outputOptions)
                 .start(ContextCompat.getMainExecutor(this), event -> {
-                        if (event instanceof VideoRecordEvent.Start) {
-                            Log.i("Video", "Enregistrement commencé");
-                        } else if (event instanceof VideoRecordEvent.Finalize) {
-                            VideoRecordEvent.Finalize finalizeEvent = (VideoRecordEvent.Finalize) event;
-                            videoUri = finalizeEvent.getOutputResults().getOutputUri();
-                            Log.i("Video", "Enregistrement TERMINÉ. Saved to: " + finalizeEvent.getOutputResults().getOutputUri());
-                            try {
-                                extractFrames(videoUri);
-                                setPatientPhoto(videoUri);
-                                binding.videoSection.setVisibility(GONE);
-                                binding.normalSection.setVisibility(VISIBLE);
-                            } catch (IOException e) {
-                                throw new RuntimeException(e);
-                            }
-                            if (finalizeEvent.hasError()) {
-                                Log.e("Video", "Error during recording: " + finalizeEvent.getError());
-                            }
+                    if (event instanceof VideoRecordEvent.Start) {
+                        Log.i("Video", "Enregistrement commencé");
+                    } else if (event instanceof VideoRecordEvent.Finalize) {
+                        VideoRecordEvent.Finalize finalizeEvent = (VideoRecordEvent.Finalize) event;
+                        videoUri = finalizeEvent.getOutputResults().getOutputUri();
+                        Log.i("Video", "Enregistrement TERMINÉ. Saved to: " + finalizeEvent.getOutputResults().getOutputUri());
+                        try {
+                            extractFrames(videoUri);
+                            setPatientPhoto(videoUri);
+                            binding.videoSection.setVisibility(GONE);
+                            binding.normalSection.setVisibility(VISIBLE);
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
                         }
-                    });
+                        if (finalizeEvent.hasError()) {
+                            Log.e("Video", "Error during recording: " + finalizeEvent.getError());
+                        }
+                    }
+                });
         Handler handler = new Handler(Looper.getMainLooper());
         int delay = 2000;
         String[] instructions = {
@@ -545,7 +487,4 @@ public class FaceActivity extends AppCompatActivity {
         }, instructions.length * delay + 1000);
 
     }
-
-
 }
-
