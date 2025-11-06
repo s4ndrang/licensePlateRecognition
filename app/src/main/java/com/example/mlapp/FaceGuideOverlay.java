@@ -13,8 +13,8 @@ public class FaceGuideOverlay extends View {
 
     private final Paint strokePaint;
     private RectF ovalRect;
-    private float ovalWidthFraction = 0.6f;   // fraction of view width
-    private float ovalHeightFraction = 0.55f; // fraction of view height
+    private float ovalWidthFraction = 0.7f;
+    private float ovalHeightFraction = 0.45f;
     private float verticalOffsetPx = 0f;      // positive = move down, negative = move up
 
     public FaceGuideOverlay(Context context) {

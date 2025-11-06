@@ -13,13 +13,15 @@ import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.media.MediaMetadataRetriever;
+import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.widget.ImageView;
 import android.widget.Toast;
 
@@ -30,11 +32,15 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.camera.core.CameraSelector;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.video.FileOutputOptions;
 import androidx.camera.video.Quality;
 import androidx.camera.video.QualitySelector;
 import androidx.camera.video.Recorder;
+import androidx.camera.video.Recording;
 import androidx.camera.video.VideoCapture;
+import androidx.camera.video.VideoRecordEvent;
 import androidx.camera.view.PreviewView;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.exifinterface.media.ExifInterface;
@@ -77,6 +83,7 @@ public class FaceActivity extends AppCompatActivity {
     private List<float[]> patientEmbeddings = new ArrayList<>();
     private float[] embeddingNew;
     private String name;
+    private VideoCapture<Recorder> videoCapture;
 
     // High-accuracy landmark detection and face classification
     FaceDetectorOptions highAccuracyOpts =
@@ -103,8 +110,13 @@ public class FaceActivity extends AppCompatActivity {
             finish();
         });
 
+        binding.videoSection.setVisibility(VISIBLE);
+        binding.normalSection.setVisibility(GONE);
+        binding.ok.setVisibility(VISIBLE);
+
         binding.takePhoto.setOnClickListener(this::takePhoto);
-        binding.ok.setOnClickListener(this::openVideoRecorder);
+        binding.ok.setOnClickListener(this::startRecording);
+        startCameraWithOverlay();
 
         //Create tflite object, loaded from the model file
         try {
@@ -219,8 +231,7 @@ public class FaceActivity extends AppCompatActivity {
                                 new OnFailureListener() {
                                     @Override
                                     public void onFailure(@NonNull Exception e) {
-                                        // Task failed with an exception
-                                        // ...
+                                        Log.i("TFLiteDebug", "Visage non-détecté");
                                     }
                                 });
     }
@@ -243,8 +254,7 @@ public class FaceActivity extends AppCompatActivity {
                                 new OnFailureListener() {
                                     @Override
                                     public void onFailure(@NonNull Exception e) {
-                                        // Task failed with an exception
-                                        // ...
+                                        Log.i("TFLiteDebug", "Visage non-détecté");
                                     }
                                 });
     }
@@ -302,8 +312,6 @@ public class FaceActivity extends AppCompatActivity {
                 boolean cameraGranted = result.getOrDefault(Manifest.permission.CAMERA, false);
                 boolean audioGranted = result.getOrDefault(Manifest.permission.RECORD_AUDIO, false);
                 if (cameraGranted && audioGranted) {
-                    binding.normalSection.setVisibility(GONE);
-                    binding.videoSection.setVisibility(VISIBLE);
                 } else {
                     Toast.makeText(this, "Camera and audio permissions are required", Toast.LENGTH_SHORT).show();
                 }
@@ -325,21 +333,6 @@ public class FaceActivity extends AppCompatActivity {
                         }
                     });
 
-    private final ActivityResultLauncher<Intent> videoActivityResultLauncher =
-            registerForActivityResult(new ActivityResultContracts.StartActivityForResult(),
-                    result -> {
-                if (result.getResultCode() == Activity.RESULT_OK) {
-                    try {
-                        extractFrames(videoUri);
-                        setPatientPhoto(videoUri);
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
-                    }
-                } else {
-                    Toast.makeText(this, "Camera and audio permissions are required", Toast.LENGTH_SHORT).show();
-                }
-            });
-
     private void bindPhoto(View view) {
         imageFile = new File(view.getContext().getCacheDir(), photoFile.getName()); // Get full path
         Glide
@@ -348,20 +341,11 @@ public class FaceActivity extends AppCompatActivity {
                 .into((ImageView) view); //data binding
     }
 
-    //@Override
     public void takePhoto(View view) {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             cameraRequestPermissionLauncher.launch(Manifest.permission.CAMERA);
         } else {
             openCamera();
-        }
-    }
-
-    private void takeVideo(View view) {
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { //if user did not select Allow Camera for always;
-            videoRequestPermissionLauncher.launch(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO});
-        } else {
-            openVideoRecorder(view);
         }
     }
 
@@ -379,25 +363,6 @@ public class FaceActivity extends AppCompatActivity {
         }
     }
 
-    private void openVideoRecorder(View view) {
-        startCameraWithOverlay();
-        createVideoFile();
-        try {
-            videoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", videoFile);
-            ActivityResultContracts.CaptureVideo takeVideo = new ActivityResultContracts.CaptureVideo();
-            Intent takeVideoIntent = takeVideo.createIntent(this, videoUri);
-            takeVideoIntent.putExtra(MediaStore.EXTRA_DURATION_LIMIT, 10); //10sec
-            takeVideoIntent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
-            if (takeVideoIntent.resolveActivity(this.getPackageManager()) != null) {
-                videoActivityResultLauncher.launch(takeVideoIntent);
-                binding.normalSection.setVisibility(VISIBLE);
-                binding.videoSection.setVisibility(GONE);
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-    }
     private void createImageFile() {
         try {
             photoFile = File.createTempFile(UUID.randomUUID() + "_", ".png", getCacheDir());
@@ -441,7 +406,6 @@ public class FaceActivity extends AppCompatActivity {
 
         long durationMs = Long.parseLong(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION));
 
-        //Extract frame every quarter of a sec
         for (int i = 0; i < durationMs; i += 250) {
             Bitmap frame = retriever.getFrameAtTime(i * 1000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC); //microseconds
             if (frame != null) {
@@ -481,15 +445,16 @@ public class FaceActivity extends AppCompatActivity {
                 Preview preview = new Preview.Builder().build();
                 CameraSelector cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA;
 
-                VideoCapture<Recorder> videoCapture =
-                        new VideoCapture.Builder(
-                                new Recorder.Builder()
-                                        .setQualitySelector(QualitySelector.from(Quality.HD))
-                                        .build()
-                        ).build();
+                // Video Capture setup
+                QualitySelector qualitySelector = QualitySelector.from(Quality.HD);
+                Recorder recorder = new Recorder.Builder()
+                        .setQualitySelector(qualitySelector)
+                        .build();
+                videoCapture = VideoCapture.withOutput(recorder);
 
                 preview.setSurfaceProvider(binding.previewView.getSurfaceProvider());
 
+                cameraProvider.unbindAll();
                 cameraProvider.bindToLifecycle(
                         this,
                         cameraSelector,
@@ -507,6 +472,73 @@ public class FaceActivity extends AppCompatActivity {
         }, ContextCompat.getMainExecutor(this));
     }
 
+    private void startRecording(View view) {
+        if (videoCapture == null) return;
+
+        binding.ok.setVisibility(GONE);
+
+        createVideoFile(); // create file to save video
+        FileOutputOptions outputOptions = new FileOutputOptions.Builder(videoFile).build();
+
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { //if user did not select Allow Camera for always;
+                videoRequestPermissionLauncher.launch(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO});
+            }
+        }
+        Recording currentRecording = videoCapture.getOutput()
+                .prepareRecording(this, outputOptions)
+                .start(ContextCompat.getMainExecutor(this), event -> {
+                        if (event instanceof VideoRecordEvent.Start) {
+                            Log.i("Video", "Recording started");
+                        } else if (event instanceof VideoRecordEvent.Finalize) {
+                            VideoRecordEvent.Finalize finalizeEvent = (VideoRecordEvent.Finalize) event;
+                            videoUri = finalizeEvent.getOutputResults().getOutputUri();
+                            Log.i("Video", "Enregistrement TERMINÉ. Saved to: " + finalizeEvent.getOutputResults().getOutputUri());
+                            try {
+                                extractFrames(videoUri);
+                                setPatientPhoto(videoUri);
+                                binding.videoSection.setVisibility(GONE);
+                                binding.normalSection.setVisibility(VISIBLE);
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                            if (finalizeEvent.hasError()) {
+                                Log.e("Video", "Error during recording: " + finalizeEvent.getError());
+                            }
+                        }
+                    });
+        Handler handler = new Handler(Looper.getMainLooper());
+        int delay = 2000;
+        String[] instructions = {
+                "Centrez votre visage dans l'ovale",
+                "Regardez à GAUCHE",
+                "Regardez à DROITE",
+                "Regardez vers le HAUT",
+                "Regardez vers le BAS",
+                "Regardez DEVANT"
+        };
+
+        for (int i = 0; i < instructions.length; i++) {
+            int index = i;
+            handler.postDelayed(() -> {
+                binding.instructionText.setText(instructions[index]);
+                binding.instructionText.setTextSize(50);
+            }, i * delay);
+        }
+        handler.postDelayed(() -> {
+            currentRecording.stop();
+            binding.instructionText.setText("TERMINÉ!");
+            MediaPlayer mp = MediaPlayer.create(this, R.raw.ding);
+            mp.start();
+        }, instructions.length * delay + 1000);
+
+        handler.postDelayed(() -> {
+            currentRecording.stop();
+            binding.instructionText.setText("Mise à jour des données... \n\n Attendez SVP...");
+            binding.instructionText.setTextSize(24);
+        }, instructions.length * delay + 1000);
+
+    }
 
 
 }

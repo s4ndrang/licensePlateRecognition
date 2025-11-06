@@ -112,10 +112,11 @@
                 android:text="Centrez votre visage dans l’ovale. \n\nLorsque la vidéo commence, tournez la tête vers la droite, la gauche, le haut, puis le bas.\n\n Enfin, regardez de nouveau droit devant vous."
                 android:textColor="@color/white"
                 android:textAlignment="center"
-                android:textSize="18dp"
+                android:textSize="24dp"
                 android:paddingStart="20dp"
                 android:paddingEnd="20dp"
-                app:layout_constraintBottom_toTopOf="@id/ok"
+                android:paddingBottom="100dp"
+                app:layout_constraintBottom_toBottomOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
             <Button
