@@ -1,5 +1,8 @@
 package com.example.mlapp;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
@@ -12,6 +15,8 @@ import android.graphics.Rect;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.View;
@@ -22,6 +27,15 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.video.Quality;
+import androidx.camera.video.QualitySelector;
+import androidx.camera.video.Recorder;
+import androidx.camera.video.VideoCapture;
+import androidx.camera.view.PreviewView;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.exifinterface.media.ExifInterface;
 
@@ -30,6 +44,7 @@ import com.example.mlapp.databinding.ActivityFaceBinding;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.android.gms.tasks.Task;
+import com.google.common.util.concurrent.ListenableFuture;
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.face.Face;
 import com.google.mlkit.vision.face.FaceDetection;
@@ -48,6 +63,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ExecutionException;
 
 public class FaceActivity extends AppCompatActivity {
 
@@ -88,6 +104,7 @@ public class FaceActivity extends AppCompatActivity {
         });
 
         binding.takePhoto.setOnClickListener(this::takePhoto);
+        binding.ok.setOnClickListener(this::openVideoRecorder);
 
         //Create tflite object, loaded from the model file
         try {
@@ -97,7 +114,6 @@ public class FaceActivity extends AppCompatActivity {
         }
         detector = FaceDetection.getClient(highAccuracyOpts);
         patientEmbeddings.clear();
-        takeVideo(binding.patientPhoto);
     }
 
     public float[] doInference(Bitmap image) {
@@ -286,7 +302,8 @@ public class FaceActivity extends AppCompatActivity {
                 boolean cameraGranted = result.getOrDefault(Manifest.permission.CAMERA, false);
                 boolean audioGranted = result.getOrDefault(Manifest.permission.RECORD_AUDIO, false);
                 if (cameraGranted && audioGranted) {
-                    openVideoRecorder();
+                    binding.normalSection.setVisibility(GONE);
+                    binding.videoSection.setVisibility(VISIBLE);
                 } else {
                     Toast.makeText(this, "Camera and audio permissions are required", Toast.LENGTH_SHORT).show();
                 }
@@ -344,7 +361,7 @@ public class FaceActivity extends AppCompatActivity {
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { //if user did not select Allow Camera for always;
             videoRequestPermissionLauncher.launch(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO});
         } else {
-            openVideoRecorder();
+            openVideoRecorder(view);
         }
     }
 
@@ -362,9 +379,9 @@ public class FaceActivity extends AppCompatActivity {
         }
     }
 
-    private void openVideoRecorder() {
+    private void openVideoRecorder(View view) {
+        startCameraWithOverlay();
         createVideoFile();
-
         try {
             videoUri = FileProvider.getUriForFile(this, getPackageName() + ".fileprovider", videoFile);
             ActivityResultContracts.CaptureVideo takeVideo = new ActivityResultContracts.CaptureVideo();
@@ -373,10 +390,13 @@ public class FaceActivity extends AppCompatActivity {
             takeVideoIntent.putExtra(MediaStore.EXTRA_VIDEO_QUALITY, 1);
             if (takeVideoIntent.resolveActivity(this.getPackageManager()) != null) {
                 videoActivityResultLauncher.launch(takeVideoIntent);
+                binding.normalSection.setVisibility(VISIBLE);
+                binding.videoSection.setVisibility(GONE);
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+
     }
     private void createImageFile() {
         try {
@@ -448,6 +468,46 @@ public class FaceActivity extends AppCompatActivity {
         bindPhoto(binding.patientPhoto);
         binding.name.setText(name);
     }
+
+    private void startCameraWithOverlay() {
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture =
+                ProcessCameraProvider.getInstance(this);
+
+        cameraProviderFuture.addListener(() -> {
+            try {
+                ProcessCameraProvider cameraProvider = cameraProviderFuture.get();
+                cameraProvider.unbindAll();
+
+                Preview preview = new Preview.Builder().build();
+                CameraSelector cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA;
+
+                VideoCapture<Recorder> videoCapture =
+                        new VideoCapture.Builder(
+                                new Recorder.Builder()
+                                        .setQualitySelector(QualitySelector.from(Quality.HD))
+                                        .build()
+                        ).build();
+
+                preview.setSurfaceProvider(binding.previewView.getSurfaceProvider());
+
+                cameraProvider.bindToLifecycle(
+                        this,
+                        cameraSelector,
+                        preview,
+                        videoCapture
+                );
+
+                // Show overlay on top of preview
+                binding.overlayOval.bringToFront();
+                binding.overlayOval.setZ(100f);
+
+            } catch (ExecutionException | InterruptedException e) {
+                e.printStackTrace();
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+
 
 }
 

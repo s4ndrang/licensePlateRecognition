@@ -1,3 +1,5 @@
+import org.gradle.kotlin.dsl.implementation
+
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -43,6 +45,7 @@ android {
 dependencies {
     implementation(libs.appcompat)
     implementation(libs.material)
+    implementation(libs.camera.view)
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
@@ -50,4 +53,11 @@ dependencies {
     implementation(libs.tensorflow.lite)
     implementation(libs.face.detection)
     implementation(libs.play.services.mlkit.text.recognition)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.extensions)
+
+
 }

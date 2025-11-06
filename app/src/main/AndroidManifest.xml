@@ -29,10 +29,6 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".ImageActivity"
-            android:exported="false"
-            android:theme="@style/AppTheme" />
-        <activity
             android:name=".FaceActivity"
             android:exported="false"
             android:theme="@style/AppTheme" />
