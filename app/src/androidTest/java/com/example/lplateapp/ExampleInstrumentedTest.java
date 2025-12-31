@@ -1,4 +1,4 @@
-package com.example.mlapp;
+package com.example.lplateapp;
 
 import android.content.Context;
 
@@ -21,6 +21,6 @@ public class ExampleInstrumentedTest {
     public void useAppContext() {
         // Context of the app under test.
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.example.mlapp", appContext.getPackageName());
+        assertEquals("com.example.lplateapp", appContext.getPackageName());
     }
 }

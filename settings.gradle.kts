@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "MLApp"
+rootProject.name = "LPlateApp"
 include(":app")
  

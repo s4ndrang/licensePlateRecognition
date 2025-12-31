@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mlapp"
+    namespace = "com.example.lplateapp"
     compileSdk = 36
 
     buildFeatures{
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.mlapp"
+        applicationId = "com.example.lplateapp"
         minSdk = 34
         targetSdk = 36
         versionCode = 1
@@ -49,16 +49,10 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
-    implementation(libs.glide)
     implementation(libs.tensorflow.lite)
     implementation(libs.face.detection)
     implementation(libs.play.services.mlkit.text.recognition)
-    implementation(libs.androidx.camera.core)
-    implementation(libs.androidx.camera.camera2)
-    implementation(libs.androidx.camera.lifecycle)
-    implementation(libs.androidx.camera.view)
-    implementation(libs.androidx.camera.extensions)
-    implementation(libs.androidx.camera.video)
+    implementation(libs.text.recognition)
 
 
 }

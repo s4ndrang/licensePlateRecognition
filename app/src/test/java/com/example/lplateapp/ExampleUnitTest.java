@@ -1,4 +1,4 @@
-package com.example.mlapp;
+package com.example.lplateapp;
 
 import org.junit.Test;
 
